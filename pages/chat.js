@@ -1,31 +1,59 @@
-import { Box, Text, TextField, Image, Button } from '@skynexui/components';
+import { Box, Text, TextField, Image, Button, Icon } from '@skynexui/components';
 import React from 'react';
 import appConfig from '../config.json';
+import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js'
+import { ButtonSendSticker } from '../src/components/ButtonSendSticker'
 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlhdCI6MTY0MzMyMDI5OCwiZXhwIjoxOTU4ODk2Mjk4fQ.SPL3RmQATWWAzanXELyWelyfuDzH_a3Oxuqzjns7NVQ'
 const SUPABASE_URL = 'https://rvdyztarokpgeyqbrzmd.supabase.co'
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
+function escutaMensagensEmTempoReal(adicionaMensagem) {
+  return supabaseClient
+    .from('mensagens')
+    .on('INSERT', (respostaLive) => {
+      adicionaMensagem(respostaLive.new)
+    })
+    .subscribe()
+}
+
 export default function ChatPage() {
+  const roteamento = useRouter();
+  const usuarioLogado = roteamento.query.username
   const [mensagem, setMensagem] = React.useState('')
   const [listaDeMensagens, setListaDeMensagens] = React.useState([])
   
-  // useEffect só executa em determinados casos (no caso se listaDeMensagens mudar)
+  // useEffect só executa em determinados casos 
   React.useEffect(() => {
     supabaseClient
     .from('mensagens')
     .select('*')
     .order('id', { ascending: false })
     .then(({ data }) => {
+      // pega lista de mensagens do backend
       setListaDeMensagens(data)
     })
+
+    const subscription = escutaMensagensEmTempoReal((novaMensagem) => {
+      // atualizacao na tela
+      setListaDeMensagens((valorAtualDaLista) => {
+        return [
+          novaMensagem,
+          ...valorAtualDaLista,
+        ]
+      })
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
   }, [])
   
   function handleNovaMensagem(novaMensagem) {
     const mensagem = {
       // id: listaDeMensagens.length + 1,
-      de: 'amanconde23',
+      de: usuarioLogado,
       texto: novaMensagem,
     }
 
@@ -34,12 +62,7 @@ export default function ChatPage() {
       .insert([
         mensagem
       ])
-      .then(({ data }) => {
-        setListaDeMensagens([
-          data[0],
-          ...listaDeMensagens,
-        ])
-      })
+      .then(({ data }) => {})
 
     setMensagem('')
   }
@@ -81,14 +104,7 @@ export default function ChatPage() {
       }}
     >
     
-    <MessageList mensagens={listaDeMensagens}/>
-    {/* {listaDeMensagens.map((mensagemAtual) => {
-      return (
-        <li key={mensagemAtual.id}>
-          {mensagemAtual.de}: {mensagemAtual.texto}
-        </li>
-      )
-    })} */}
+    <MessageList mensagens={listaDeMensagens} setListaDeMensagens={setListaDeMensagens}/>
 
     <Box
       as="form"
@@ -122,6 +138,12 @@ export default function ChatPage() {
         color: appConfig.theme.colors.primary[1001],
       }}
     />
+    {/* Callback */}
+    <ButtonSendSticker 
+      onStickerClick={(sticker) => {
+        handleNovaMensagem(':sticker:' + sticker)
+      }}
+    />
     </Box>
     </Box>
     </Box>
@@ -138,9 +160,14 @@ function Header() {
         </Text>
         <Button
           variant='tertiary'
-          colorVariant='neutral'
           label='Logout'
           href="/"
+          styleSheet={{
+            color: appConfig.theme.colors.neutrals["000"],
+            hover: {
+              backgroundColor: appConfig.theme.colors.primary[1000],
+            },
+          }}
         />
       </Box>
     </>
@@ -148,11 +175,22 @@ function Header() {
 }
 
 function MessageList(props) {
+  function deleteMessage(id) {
+    supabaseClient
+      .from('mensagens')
+      .delete()
+      .eq("id", id)
+      .then(() => {
+        const novaListaDeMensagens = props.mensagens.filter((mensagem) => mensagem.id !== id);
+        props.setListaDeMensagens(novaListaDeMensagens);
+      }) 
+  }
+
   return (
     <Box
       tag="ul"
       styleSheet={{
-        // overflow: 'scroll',
+        overflowY: 'scroll',
         display: 'flex',
         flexDirection: 'column-reverse',
         flex: 1,
@@ -170,7 +208,7 @@ function MessageList(props) {
             padding: '6px',
             marginBottom: '12px',
             hover: {
-              backgroundColor: appConfig.theme.colors.primary[1001],
+              backgroundColor: appConfig.theme.colors.neutrals[1000],
             }
           }}
         >
@@ -202,8 +240,35 @@ function MessageList(props) {
         >
         {(new Date().toLocaleDateString())}
         </Text>
+        <Icon
+          styleSheet={{
+            width: "16px",
+            marginLeft: "95%",
+            display: "inline-block",
+            marginRight: "8px",
+            cursor: "pointer",
+            hover: {
+              backgroundColor: appConfig.theme.colors.primary[1000],
+            },
+          }}
+          onClick={() => {
+            deleteMessage(mensagem.id);
+          }}
+          name="FaRegWindowClose"
+          variant="tertiary"
+          colorVariant="neutral"
+        />
         </Box>
-        {mensagem.texto}
+        {/* condicional, se for um boolean, retorna string */}
+        {/* {mensagem.texto.startsWith(':sticker:').toString()} */}
+        {mensagem.texto.startsWith(':sticker:')
+          ? (
+            <Image src={mensagem.texto.replace(':sticker:', '')}/>
+          )
+          : (
+            mensagem.texto
+          )
+        }
         </Text>
       )
     })}
